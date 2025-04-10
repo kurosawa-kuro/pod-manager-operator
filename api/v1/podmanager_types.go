@@ -30,7 +30,7 @@ type PodManagerSpec struct {
 
 	// Replicas is the number of pods to run
 	Replicas int32 `json:"replicas,omitempty"`
-	
+
 	// RestartPolicy defines the restart policy for pods
 	// +kubebuilder:validation:Enum=Always;OnFailure;Never
 	RestartPolicy string `json:"restartPolicy,omitempty"`
@@ -40,10 +40,10 @@ type PodManagerSpec struct {
 type PodManagerStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
-	
+
 	// AvailableReplicas represents the number of available pods
 	AvailableReplicas int32 `json:"availableReplicas,omitempty"`
-	
+
 	// Status represents the current status of the PodManager
 	Status string `json:"status,omitempty"`
 }

@@ -104,11 +104,18 @@ func (r *PodManagerReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		}
 
 		// ステータスの更新
-		podManager.Status.AvailableReplicas = int32(len(pods.Items))
-		podManager.Status.Status = "Running"
-		if err := r.Status().Update(ctx, &podManager); err != nil {
-			logger.Error(err, "Failed to update PodManager status")
+		// 最新のリソースを取得してからステータスを更新する
+		latestPodManager := &examplev1.PodManager{}
+		if err := r.Get(ctx, req.NamespacedName, latestPodManager); err != nil {
+			logger.Error(err, "Failed to re-fetch PodManager before status update")
 			return ctrl.Result{}, err
+		}
+		latestPodManager.Status.AvailableReplicas = int32(len(pods.Items))
+		latestPodManager.Status.Status = "Running"
+		if err := r.Status().Update(ctx, latestPodManager); err != nil {
+			logger.Error(err, "Failed to update PodManager status")
+			// エラーが発生した場合、リキューして再試行する可能性があるため、Result{} を返す
+			return ctrl.Result{Requeue: true}, err
 		}
 	}
 
@@ -118,7 +125,7 @@ func (r *PodManagerReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 // deploymentForPodManager はPodManagerに基づいて新しいDeploymentを返します
 func (r *PodManagerReconciler) deploymentForPodManager(m *examplev1.PodManager) *appsv1.Deployment {
 	labels := map[string]string{"app": m.Name}
-	
+
 	// リスタートポリシーの設定（デフォルトはAlways）
 	restartPolicy := corev1.RestartPolicyAlways
 	if m.Spec.RestartPolicy != "" {

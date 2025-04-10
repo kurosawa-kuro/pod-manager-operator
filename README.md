@@ -23,8 +23,14 @@ chmod +x operator-sdk_linux_amd64 && sudo mv operator-sdk_linux_amd64 /usr/local
 # Goのインストール
 wget https://go.dev/dl/go1.21.4.linux-amd64.tar.gz && sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf go1.21.4.linux-amd64.tar.gz
 
-# パス設定
-export PATH=$PATH:/usr/local/go/bin && export GOPATH=$HOME/go && export PATH=$PATH:$GOPATH/bin
+# パス設定 (永続化)
+# .bashrc にパスを追加
+echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
+echo 'export GOPATH=$HOME/go' >> ~/.bashrc
+echo 'export PATH=$PATH:$GOPATH/bin' >> ~/.bashrc
+
+# 変更を反映
+source ~/.bashrc
 
 # Makeのインストール
 sudo apt-get update && sudo apt-get install -y make
@@ -40,6 +46,10 @@ mkdir -p ~/dev/pod-manager-operator && cd ~/dev/pod-manager-operator
 
 # Operator SDKでプロジェクトを初期化
 operator-sdk init --plugins go/v3 --domain example.com --repo github.com/example/pod-manager-operator
+
+# Go モジュールの依存関係を解決 (vet エラー対策)
+go mod tidy
+go mod download github.com/onsi/ginkgo/v2
 ```
 
 次に、Kubernetesリソースを管理するAPIを作成します：
@@ -356,6 +366,12 @@ Operatorのログをデバッグするには、以下のコマンドを実行し
 # ローカルで実行している場合のログ確認
 # make runの出力を確認
 
+# Goのパスが通っていない場合のエラー ("go: No such file or directory")
+# 前提条件のパス設定を再確認し、~/.bashrc に追記して source ~/.bashrc を実行してください。
+
+# Go vet エラー ("missing go.sum entry")
+# go mod download github.com/onsi/ginkgo/v2 を実行してください。
+
 # クラスター内にデプロイしている場合のログ確認
 kubectl logs -l control-plane=controller-manager -n <namespace>
 ```
@@ -394,6 +410,35 @@ make install
 # Operatorの再実行
 make run
 ```
+
+### 7. ステータス更新時の競合エラー
+
+Operatorログに以下のようなエラーが表示される場合があります：
+
+```
+"Operation cannot be fulfilled on ...: the object has been modified; please apply your changes to the latest version and try again"
+```
+
+これは、ステータス更新時にリソースが既に変更されている場合に発生します。`controllers/podmanager_controller.go` のステータス更新部分を修正し、更新直前に最新のリソースを取得するようにします。
+
+```go
+// ステータスの更新
+// 最新のリソースを取得してからステータスを更新する
+latestPodManager := &examplev1.PodManager{}
+if err := r.Get(ctx, req.NamespacedName, latestPodManager); err != nil {
+    logger.Error(err, "Failed to re-fetch PodManager before status update")
+    return ctrl.Result{}, err
+}
+latestPodManager.Status.AvailableReplicas = int32(len(pods.Items))
+latestPodManager.Status.Status = "Running"
+if err := r.Status().Update(ctx, latestPodManager); err != nil {
+    logger.Error(err, "Failed to update PodManager status")
+    // エラーが発生した場合、リキューして再試行する可能性があるため、Result{} を返す
+    return ctrl.Result{Requeue: true}, err
+}
+```
+
+修正後、Operatorを再起動してください。
 
 ## まとめ
 
