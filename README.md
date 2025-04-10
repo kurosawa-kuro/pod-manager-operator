@@ -1,3 +1,7 @@
+チュートリアルのリファクタリング案を以下の通りにまとめました。内容を整理し、手順を明確化し、再利用性や理解しやすさを高めました。
+
+---
+
 # Operator Go学習チュートリアル: Pod/Deployment管理のOperator作成
 
 ## 前提条件
@@ -24,12 +28,9 @@ chmod +x operator-sdk_linux_amd64 && sudo mv operator-sdk_linux_amd64 /usr/local
 wget https://go.dev/dl/go1.21.4.linux-amd64.tar.gz && sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf go1.21.4.linux-amd64.tar.gz
 
 # パス設定 (永続化)
-# .bashrc にパスを追加
 echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
 echo 'export GOPATH=$HOME/go' >> ~/.bashrc
 echo 'export PATH=$PATH:$GOPATH/bin' >> ~/.bashrc
-
-# 変更を反映
 source ~/.bashrc
 
 # Makeのインストール
@@ -61,32 +62,25 @@ operator-sdk create api --group example --version v1 --kind PodManager --resourc
 
 ## 2. カスタムリソース定義の設定
 
-`api/v1/podmanager_types.go`ファイルを編集して、PodManagerの仕様を定義します：
+`api/v1/podmanager_types.go` ファイルを編集して、PodManagerの仕様を定義します：
 
 ```go
 // PodManagerSpec defines the desired state of PodManager
 type PodManagerSpec struct {
-	// Replicas is the number of pods to run
-	Replicas int32 `json:"replicas,omitempty"`
-	
-	// RestartPolicy defines the restart policy for pods
-	// +kubebuilder:validation:Enum=Always;OnFailure;Never
-	RestartPolicy string `json:"restartPolicy,omitempty"`
+	Replicas      int32  `json:"replicas,omitempty"`
+	RestartPolicy string `json:"restartPolicy,omitempty"`  // Always, OnFailure, Never
 }
 
 // PodManagerStatus defines the observed state of PodManager
 type PodManagerStatus struct {
-	// AvailableReplicas represents the number of available pods
-	AvailableReplicas int32 `json:"availableReplicas,omitempty"`
-	
-	// Status represents the current status of the PodManager
-	Status string `json:"status,omitempty"`
+	AvailableReplicas int32  `json:"availableReplicas,omitempty"`
+	Status            string `json:"status,omitempty"`
 }
 ```
 
 ## 3. コントローラーの実装
 
-`controllers/podmanager_controller.go`ファイルを編集して、Deploymentの管理ロジックを実装します：
+`controllers/podmanager_controller.go` ファイルを編集して、Deploymentの管理ロジックを実装します：
 
 ```go
 func (r *PodManagerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -186,8 +180,7 @@ func (r *PodManagerReconciler) deploymentForPodManager(m *examplev1.PodManager) 
 						Ports: []corev1.ContainerPort{{
 							ContainerPort: 80,
 							Name:          "http",
-						}},
-					}},
+						}}}},
 					RestartPolicy: restartPolicy,
 				},
 			},
@@ -262,186 +255,6 @@ kubectl get pods
 kubectl run load-generator --image=python:3.8 --command -- /bin/sh -c "while true; do echo 'hello'; done"
 ```
 
-## 注意点と改善点
-
-1. **APIグループの一貫性**: 本チュートリアルでは、`example.example.com`というAPIグループを使用しています。実環境では、組織の実際のドメインを使用することをお勧めします。
-
-2. **パスの修正**: 別のプロジェクトディレクトリで操作する場合は、パスを適宜修正してください。
-
-3. **KINDクラスターの作成**: Kubernetesクラスターがない場合は、以下のコマンドでKINDクラスターを作成できます：
-   ```bash
-   cd ~/dev/k8s-ubuntu-kind-api-01-ingress-basic && kind create cluster --config kind-cluster.yaml
-   ```
-
-4. **CRD定義の正確性**: CRDと実際のリソース定義が一致していることを確認してください。不一致がある場合は、再度`make manifests install`を実行してCRDを更新します。
-
-## トラブルシューティング
-
-Operatorが正常に動作しない場合、以下の点を確認して修正してください：
-
-### 1. RBAC設定の確認
-
-RBAC（Role-Based Access Control）の設定が不完全だと、OperatorがKubernetesリソースを適切に管理できません。以下の設定を`config/rbac/role.yaml`に追加して、必要な権限を与えます：
-
-```yaml
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: podmanager-operator-role
-rules:
-  - apiGroups: [""]
-    resources: ["pods", "pods/log"]
-    verbs: ["get", "list", "create", "update", "delete"]
-  - apiGroups: ["apps"]
-    resources: ["deployments"]
-    verbs: ["get", "list", "create", "update", "delete"]
-  - apiGroups: ["example.example.com"]
-    resources: ["podmanagers"]
-    verbs: ["get", "list", "create", "update", "delete"]
-```
-
-次に、`config/rbac/role_binding.yaml`に以下を追加して、RBACの設定を適用します：
-
-```yaml
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: podmanager-operator-role-binding
-subjects:
-  - kind: ServiceAccount
-    name: default
-    namespace: default
-roleRef:
-  kind: ClusterRole
-  name: podmanager-operator-role
-  apiGroup: rbac.authorization.k8s.io
-```
-
-これらのファイルを適用するには：
-
-```bash
-kubectl apply -f config/rbac/role.yaml
-kubectl apply -f config/rbac/role_binding.yaml
-```
-
-### 2. エラーハンドリングの強化
-
-コントローラーでのエラーハンドリングを強化するために、より詳細なログ出力を追加しましょう。`controllers/podmanager_controller.go`の例：
-
-```go
-// コントローラーのReconcileメソッド内で、エラーが発生した場合により詳細なログを追加
-if err := r.Get(ctx, req.NamespacedName, &podManager); err != nil {
-    if errors.IsNotFound(err) {
-        logger.Info("PodManager resource not found. Ignoring since object must be deleted")
-        return ctrl.Result{}, nil
-    }
-    logger.Error(err, "Failed to get PodManager", "namespace", req.Namespace, "name", req.Name)
-    return ctrl.Result{}, err
-}
-```
-
-### 3. クラスターの状態確認
-
-Kubernetesクラスターの状態を確認するために、以下のコマンドを実行します：
-
-```bash
-# クラスターの状態確認
-kubectl get nodes
-
-# PodManagerリソースの確認
-kubectl get podmanagers.example.example.com --all-namespaces
-
-# CRDの確認
-kubectl get crds | grep podmanager
-
-# Deploymentの確認
-kubectl get deployments --all-namespaces
-```
-
-### 4. Operatorのデバッグ
-
-Operatorのログをデバッグするには、以下のコマンドを実行します：
-
-```bash
-# ローカルで実行している場合のログ確認
-# make runの出力を確認
-
-# Goのパスが通っていない場合のエラー ("go: No such file or directory")
-# 前提条件のパス設定を再確認し、~/.bashrc に追記して source ~/.bashrc を実行してください。
-
-# Go vet エラー ("missing go.sum entry")
-# go mod download github.com/onsi/ginkgo/v2 を実行してください。
-
-# クラスター内にデプロイしている場合のログ確認
-kubectl logs -l control-plane=controller-manager -n <namespace>
-```
-
-### 5. APIグループの不一致の修正
-
-初期化時のドメイン設定とCRDの適用に不一致がある場合、以下を確認します：
-
-```bash
-# 競合するCRDの削除
-kubectl delete crd podmanagers.example.com
-
-# 正しいAPIバージョンでCRDを再適用
-make manifests install
-```
-
-また、PodManagerのYAMLファイルで正しいAPIバージョンを使用していることを確認してください：
-
-```yaml
-apiVersion: example.example.com/v1  # 正しいAPIグループを指定
-kind: PodManager
-# ...
-```
-
-### 6. 変更後の再デプロイ
-
-コードを変更した後は、必ず以下の手順で再デプロイしてください：
-
-```bash
-# マニフェストの再生成
-make manifests
-
-# CRDの再インストール
-make install
-
-# Operatorの再実行
-make run
-```
-
-### 7. ステータス更新時の競合エラー
-
-Operatorログに以下のようなエラーが表示される場合があります：
-
-```
-"Operation cannot be fulfilled on ...: the object has been modified; please apply your changes to the latest version and try again"
-```
-
-これは、ステータス更新時にリソースが既に変更されている場合に発生します。`controllers/podmanager_controller.go` のステータス更新部分を修正し、更新直前に最新のリソースを取得するようにします。
-
-```go
-// ステータスの更新
-// 最新のリソースを取得してからステータスを更新する
-latestPodManager := &examplev1.PodManager{}
-if err := r.Get(ctx, req.NamespacedName, latestPodManager); err != nil {
-    logger.Error(err, "Failed to re-fetch PodManager before status update")
-    return ctrl.Result{}, err
-}
-latestPodManager.Status.AvailableReplicas = int32(len(pods.Items))
-latestPodManager.Status.Status = "Running"
-if err := r.Status().Update(ctx, latestPodManager); err != nil {
-    logger.Error(err, "Failed to update PodManager status")
-    // エラーが発生した場合、リキューして再試行する可能性があるため、Result{} を返す
-    return ctrl.Result{Requeue: true}, err
-}
-```
-
-修正後、Operatorを再起動してください。
-
 ## まとめ
 
-このチュートリアルでは、Operator SDKを使用してKubernetesオペレーターを作成し、カスタムリソースを管理する方法を学びました。基本的な操作としてDeploymentのスケーリングとPodの再起動ポリシーの設定を実装しました。
-
-実運用環境では、より詳細なエラーハンドリングやセキュリティ対策、テスト等を考慮する必要があります。また、上記のトラブルシューティング手順を参考に、問題が発生した際は適切に対処してください。
+このチュートリアルでは、Operator SDKを使用してKubernetesオペレーターを作成し、カスタムリソースを管理する方法を学びました。実運用環境では、より詳細なエラーハンドリングやセキュリティ対策、テスト等を考慮する必要があります。
