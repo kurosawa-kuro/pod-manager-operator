@@ -1,0 +1,27 @@
+# permissions for end users to view podmanagers.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: clusterrole
+    app.kubernetes.io/instance: podmanager-viewer-role
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/created-by: pod-manager-operator
+    app.kubernetes.io/part-of: pod-manager-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: podmanager-viewer-role
+rules:
+- apiGroups:
+  - example.example.com
+  resources:
+  - podmanagers
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - example.example.com
+  resources:
+  - podmanagers/status
+  verbs:
+  - get

@@ -1,0 +1,66 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.11.1
+  creationTimestamp: null
+  name: podmanagers.example.example.com
+spec:
+  group: example.example.com
+  names:
+    kind: PodManager
+    listKind: PodManagerList
+    plural: podmanagers
+    singular: podmanager
+  scope: Namespaced
+  versions:
+  - name: v1
+    schema:
+      openAPIV3Schema:
+        description: PodManager is the Schema for the podmanagers API
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: PodManagerSpec defines the desired state of PodManager
+            properties:
+              replicas:
+                description: Replicas is the number of pods to run
+                format: int32
+                type: integer
+              restartPolicy:
+                description: RestartPolicy defines the restart policy for pods
+                enum:
+                - Always
+                - OnFailure
+                - Never
+                type: string
+            type: object
+          status:
+            description: PodManagerStatus defines the observed state of PodManager
+            properties:
+              availableReplicas:
+                description: AvailableReplicas represents the number of available
+                  pods
+                format: int32
+                type: integer
+              status:
+                description: Status represents the current status of the PodManager
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
